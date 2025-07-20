@@ -53,27 +53,35 @@ st.markdown(
 #     unsafe_allow_html=True,
 # )
 
-# Responsive title + OpenAI key input
-col1, col2 = st.columns([2, 1], gap="large")
-
-with col1:
-    st.markdown(
-        '<h2 style="margin-bottom:0.3em;margin-top:0.3em;">ATS Keywords Extractor</h2>',
-        unsafe_allow_html=True,
-    )
+# Centered layout: narrow center column for title + input
+col1, col2, col3 = st.columns([1, 1, 1], gap="large")
 
 with col2:
-    ls = LocalStorage()
-    api_key_input = st.text_input(
-        "Enter your OpenAI API Key",
-        value=ls.getItem("openai_api_key") or "",
-        type="password",
-        placeholder="sk-...",
-        help="Key is saved in your browser only.",
-        label_visibility="hidden",
+    st.markdown(
+        '<div style="text-align:center;"><h2 style="margin-bottom:0.2em;margin-top:0.2em;">ATS Keywords Extractor</h2></div>',
+        unsafe_allow_html=True,
     )
+    ls = LocalStorage()
+    api_key_val = ls.getItem("openai_api_key") or ""
+    # OpenAI key input with restricted width and centered
+    st.markdown(
+        """
+        <div style="display:flex;justify-content:center;">
+            <div style="width:270px;max-width:100%;">
+        """,
+        unsafe_allow_html=True,
+    )
+    api_key_input = st.text_input(
+        "OpenAI API Key",
+        value=api_key_val,
+        type="password",
+        placeholder="Open AI Key: sk-...",
+        help="Key is saved in your browser only.",
+        label_visibility="collapsed",  # You can use "collapsed" to hide the label
+    )
+    st.markdown("</div></div>", unsafe_allow_html=True)
     # Sync input to storage
-    if api_key_input != ls.getItem("openai_api_key"):
+    if api_key_input != api_key_val:
         ls.setItem("openai_api_key", api_key_input)
 openai_key = api_key_input
 
