@@ -10,7 +10,11 @@ import openai
 download("punkt")
 download("stopwords")
 
-st.set_page_config(layout="wide")
+st.set_page_config(
+    page_title="ATS Keywords Extractor",  # This is your new app/browser tab name
+    page_icon="🔍",
+    layout="wide",
+)
 
 # Responsive style
 st.markdown(
