@@ -35,6 +35,18 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+st.markdown(
+    """
+    <script>
+    var meta = document.createElement('meta');
+    meta.name = "google-site-verification";
+    meta.content = "F8lUQFgD6d94cAWBHbUW4oPMHl6qVE4NmyckOtZKeYg";
+    document.head.appendChild(meta);
+    </script>
+""",
+    unsafe_allow_html=True,
+)
+
 # # Inject custom CSS for split view and spacing
 # st.markdown(
 #     """
@@ -166,9 +178,9 @@ with cols[2]:
         ]
         # Repeated words > 3
         word_counts = Counter(tokens)
-        keywords = [(word, count) for word, count in word_counts.items() if count > 3]
+        keywords = [(word, count) for word, count in word_counts.items() if count > 2]
         st.markdown(
-            '<div style="font-size:1.5rem;font-weight:700;margin-bottom:0.5em;">Repeated Words (more than 3 times):</div>',
+            '<div style="font-size:1.5rem;font-weight:700;margin-bottom:0.5em;">Repeated Words (more than 2 times):</div>',
             unsafe_allow_html=True,
         )
         if keywords:
