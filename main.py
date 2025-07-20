@@ -35,18 +35,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.markdown(
-    """
-    <script>
-    var meta = document.createElement('meta');
-    meta.name = "google-site-verification";
-    meta.content = "F8lUQFgD6d94cAWBHbUW4oPMHl6qVE4NmyckOtZKeYg";
-    document.head.appendChild(meta);
-    </script>
-""",
-    unsafe_allow_html=True,
-)
-
 # # Inject custom CSS for split view and spacing
 # st.markdown(
 #     """
