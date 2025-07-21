@@ -1,18 +1,17 @@
 import streamlit as st
 from streamlit_local_storage import LocalStorage
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 from nltk.corpus import stopwords
 from nltk import word_tokenize, ngrams, download
 import openai
-from collections import defaultdict
 
 # Download stopwords if not already present
-download("punkt_tab")
+download("punkt")
 download("stopwords")
 
 st.set_page_config(
-    page_title="ATS Keywords Extractor",  # This is your new app/browser tab name
+    page_title="ATS Keywords Extractor",
     page_icon="🔍",
     layout="wide",
 )
@@ -35,28 +34,6 @@ st.markdown(
 """,
     unsafe_allow_html=True,
 )
-
-# # Inject custom CSS for split view and spacing
-# st.markdown(
-#     """
-#     <style>
-#     .split-col > div {
-#         height: 80vh !important;
-#     }
-#     textarea {
-#         min-height: 76vh !important;
-#         font-size: 1.09rem;
-#     }
-#     .block-container {
-#         padding-top: 1.5rem;
-#         padding-bottom: 1.5rem;
-#         padding-left: 2rem;
-#         padding-right: 2rem;
-#     }
-#     </style>
-#     """,
-#     unsafe_allow_html=True,
-# )
 
 # Centered layout: narrow center column for title + input
 col1, col2, col3 = st.columns([1, 1, 1], gap="large")
@@ -82,19 +59,18 @@ with col2:
         type="password",
         placeholder="Open AI Key: sk-...",
         help="Key is saved in your browser only.",
-        label_visibility="collapsed",  # You can use "collapsed" to hide the label
+        label_visibility="collapsed",
     )
     st.markdown("</div></div>", unsafe_allow_html=True)
-    # Sync input to storage
     if api_key_input != api_key_val:
         ls.setItem("openai_api_key", api_key_input)
 openai_key = api_key_input
 
 st.markdown('<div class="split-col">', unsafe_allow_html=True)
-cols = st.columns([1, 0.05, 1], gap="large")  # Left, gap, Right
+cols = st.columns([1, 0.05, 1], gap="large")
 
 with cols[0]:
-    st.markdown("#### Paste your job description below:")
+    st.markdown("### Paste your job description below:")
     job_desc = st.text_area(
         "Job Description",
         height=400,
@@ -110,7 +86,7 @@ def clean_text(text):
 
 def get_stopwords():
     custom_stopwords = {
-        # Standard English stopwords (ultra-conservative)
+        # Ultra-conservative: grammatical/filler only, no ATS verbs/skills/tools
         "a",
         "about",
         "above",
@@ -285,7 +261,6 @@ def get_stopwords():
         "yours",
         "yourself",
         "yourselves",
-        # Structural/filler words (neutral, not skills)
         "etc",
         "etc.",
         "per",
@@ -337,25 +312,174 @@ def get_stopwords():
     return set(stopwords.words("english")).union(custom_stopwords)
 
 
+def filter_subsumed_ngrams(all_ngram_counts):
+    result = defaultdict(list)
+    longer_ngrams = set()
+    longer_ngrams_count = dict()
+    for n in sorted(all_ngram_counts.keys(), reverse=True):
+        for phrase, count in all_ngram_counts[n]:
+            longer_ngrams.add(phrase)
+            longer_ngrams_count[phrase] = count
+
+    for n in sorted(all_ngram_counts.keys()):
+        for phrase, count in all_ngram_counts[n]:
+            subsumed = False
+            for longer_phrase in longer_ngrams:
+                if len(longer_phrase.split()) <= len(phrase.split()):
+                    continue
+                if (
+                    re.search(r"\b{}\b".format(re.escape(phrase)), longer_phrase)
+                    and longer_ngrams_count[longer_phrase] >= count
+                ):
+                    subsumed = True
+                    break
+            if not subsumed:
+                result[n].append((phrase, count))
+    return result
+
+
+def extract_technologies_openai(jd, api_key):
+    openai.api_key = api_key
+    prompt = (
+        "Extract a list of technologies (programming languages, frameworks, cloud services, tools, platforms, etc.) "
+        "from the following job description. Only return the technologies, one per line, no explanations or extra text:\n\n"
+        f"{jd}\n"
+    )
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an assistant that extracts a list of technologies from text.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0,
+        )
+        tech_list = response.choices[0].message.content.strip().split("\n")
+        tech_list = [
+            re.sub(r"^\s*[\-\*\d\.\)]*\s*", "", t).strip()
+            for t in tech_list
+            if t.strip()
+        ]
+        return list(set([t for t in tech_list if len(t) > 1]))
+    except Exception as e:
+        return [f"Error: {e}"]
+
+
+def extract_and_count_ats_terms(jd, api_key):
+    openai.api_key = api_key
+    prompt = f"""Given the following job description, extract and list all possible ATS-relevant keywords, skills, technologies, and responsibilities. Categorize the terms into:  
+1. Hard Skills & Tech Stack  
+2. Tasks / Responsibilities  
+3. Soft Skills / Traits  
+4. Bonus / Optional
+
+Output the list in each category as a comma-separated string, and do not use list items or tables.
+
+Job Description:  
+{jd}
+
+Example Output Format:
+
+1. Hard Skills & Tech Stack  
+term1, term2, term3
+
+2. Tasks / Responsibilities  
+term1, term2
+
+3. Soft Skills / Traits  
+term1, term2
+
+4. Bonus / Optional  
+term1, term2
+"""
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an assistant that extracts and categorizes ATS keywords and skills from job descriptions.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0,
+        )
+        result = response.choices[0].message.content
+        cats = {
+            "Hard Skills & Tech Stack": [],
+            "Tasks / Responsibilities": [],
+            "Soft Skills / Traits": [],
+            "Bonus / Optional": [],
+        }
+        for cat in cats:
+            match = re.search(rf"{re.escape(cat)}\s*\n([^\n]*)", result, re.IGNORECASE)
+            if match:
+                terms = [t.strip() for t in match.group(1).split(",") if t.strip()]
+                cats[cat] = terms
+
+        freq_dict = {}
+        for cat, terms in cats.items():
+            freq_dict[cat] = []
+            for term in terms:
+                pattern = r"\b{}\b".format(re.escape(term))
+                count = len(re.findall(pattern, jd, flags=re.IGNORECASE))
+                freq_dict[cat].append((term, count))
+        return freq_dict
+    except Exception as e:
+        return {"Error": [f"Error: {e}"]}
+
+
 with cols[2]:
-    st.markdown("#### Results")
+    st.markdown("### Results")
     if not job_desc.strip():
         st.markdown(
             """
             <div style="color: #888; font-size: 1.1rem;">
-                <div style="font-size:1.3rem;font-weight:700;">Repeated Words (more than 3 times):</div>
+                <div style="font-size:1.3rem;font-weight:700;">ATS Keywords & Skills (GPT-4o, Categorized):</div>
+                <span style="color: #bbb;">(ATS keywords, skills, responsibilities will appear here, categorized by AI)</span>
+                <div style="font-size:1.3rem;font-weight:700;">Repeated Words & Phrases (with frequencies):</div>
                 <span style="color: #bbb;">(List will appear here)</span>
-                <br><br>
-                <div style="font-size:1.3rem;font-weight:700;">Repeated Phrases:</div>
-                <span style="color: #bbb;">(List will appear here for bigrams, trigrams, etc.)</span>
-                <br><br>
-                <div style="font-size:1.3rem;font-weight:700;">Technologies Detected:</div>
-                <span style="color: #bbb;">(Technologies from the job description will be extracted by GPT-4o and shown here)</span>
             </div>
             """,
             unsafe_allow_html=True,
         )
     else:
+        # ATS Keywords & Skills (GPT-4o, Categorized)
+        if openai_key and openai_key.startswith("sk-"):
+            st.markdown(
+                '<div style="font-size:1.5rem;font-weight:700;margin-bottom:0.5em;">ATS Keywords & Skills (GPT-4o, Categorized):</div>',
+                unsafe_allow_html=True,
+            )
+            with st.spinner("Extracting ATS keywords, skills, and responsibilities..."):
+                ats_terms = extract_and_count_ats_terms(job_desc, openai_key)
+            for cat in [
+                "Hard Skills & Tech Stack",
+                "Tasks / Responsibilities",
+                "Soft Skills / Traits",
+                "Bonus / Optional",
+            ]:
+                if cat in ats_terms and ats_terms[cat]:
+                    st.markdown(
+                        f"##### {cat}",
+                    )
+                    line = ", ".join(
+                        f"{term} ({count})"
+                        for term, count in ats_terms[cat]
+                        if term and count > 0
+                    )
+                    if line:
+                        st.write(line)
+                    else:
+                        st.write("(None found)")
+        else:
+            st.info(
+                "Enter your OpenAI API key above to extract technologies and categorized ATS keywords (GPT-4o powered)."
+            )
+
+        # Repeated Words & Phrases (with frequencies)
         text_clean = clean_text(job_desc)
         stop_words = get_stopwords()
         tokens = [
@@ -363,60 +487,10 @@ with cols[2]:
             for word in word_tokenize(text_clean)
             if word not in stop_words and word.isalpha()
         ]
-        # Repeated words > 3
         word_counts = Counter(tokens)
-        keywords = [(word, count) for word, count in word_counts.items() if count > 2]
-        st.markdown(
-            '<div style="font-size:1.5rem;font-weight:700;margin-bottom:0.5em;">Repeated Words (more than 2 times):</div>',
-            unsafe_allow_html=True,
-        )
-        if keywords:
-            st.write(
-                ", ".join(
-                    [
-                        f"{word} ({count})"
-                        for word, count in sorted(keywords, key=lambda x: -x[1])
-                    ]
-                )
-            )
-        else:
-            st.write("(None)")
+        repeated = [(word, count) for word, count in word_counts.items() if count > 2]
 
-        # N-grams
-        def filter_subsumed_ngrams(all_ngram_counts):
-            """
-            all_ngram_counts: dict of n -> list of (ngram_str, count)
-            Returns: dict in same format, with subsumed ngrams removed.
-            """
-            result = defaultdict(list)
-            # Collect all longer phrases and their counts
-            longer_ngrams = set()
-            longer_ngrams_count = dict()
-            for n in sorted(all_ngram_counts.keys(), reverse=True):
-                for phrase, count in all_ngram_counts[n]:
-                    longer_ngrams.add(phrase)
-                    longer_ngrams_count[phrase] = count
-
-            for n in sorted(all_ngram_counts.keys()):
-                for phrase, count in all_ngram_counts[n]:
-                    subsumed = False
-                    for longer_phrase in longer_ngrams:
-                        if len(longer_phrase.split()) <= len(phrase.split()):
-                            continue
-                        # Make sure phrase boundaries match (use regex or split)
-                        if (
-                            re.search(
-                                r"\b{}\b".format(re.escape(phrase)), longer_phrase
-                            )
-                            and longer_ngrams_count[longer_phrase] >= count
-                        ):
-                            subsumed = True
-                            break
-                    if not subsumed:
-                        result[n].append((phrase, count))
-            return result
-
-        # Compute ngram counts for 2- to N-word phrases
+        # Collect ngrams (2+), filter for repeats, subsume
         all_ngram_counts = {}
         max_ngram = 6
         for n in range(2, max_ngram + 1):
@@ -426,99 +500,33 @@ with cols[2]:
             ]
             if frequent_ngrams:
                 all_ngram_counts[n] = frequent_ngrams
-
         unique_ngram_counts = filter_subsumed_ngrams(all_ngram_counts)
+        ngram_list = []
+        for n in sorted(unique_ngram_counts.keys()):
+            ngram_list += unique_ngram_counts[n]
 
-        if unique_ngram_counts:
-            found_ngram = False
-            for n in sorted(unique_ngram_counts.keys()):
-                ngrams_to_show = unique_ngram_counts[n]
-                if ngrams_to_show:
-                    found_ngram = True
-                    st.markdown(
-                        f'<div style="font-size:1.5rem;font-weight:700;margin-top:1.2em;margin-bottom:0.5em;">{n}-word phrases repeated more than once:</div>',
-                        unsafe_allow_html=True,
-                    )
-                    st.write(
-                        ", ".join(
-                            [
-                                f"{gram} ({count})"
-                                for gram, count in sorted(
-                                    ngrams_to_show, key=lambda x: -x[1]
-                                )
-                            ]
-                        )
-                    )
-            if not found_ngram:
-                st.markdown(
-                    '<div style="font-size:1.5rem;font-weight:700;margin-top:1.2em;margin-bottom:0.5em;">Repeated Phrases:</div>',
-                    unsafe_allow_html=True,
-                )
-                st.write("(None)")
+        # Remove single words subsumed by any phrase with >= same count
+        words_to_remove = set()
+        for word, count in repeated:
+            for phrase, pcount in ngram_list:
+                if word in phrase.split() and pcount >= count:
+                    words_to_remove.add(word)
+                    break
+        filtered_repeated = [
+            (word, count) for word, count in repeated if word not in words_to_remove
+        ]
+
+        # Combine and sort
+        combined = filtered_repeated + ngram_list
+        combined_sorted = sorted(combined, key=lambda x: -x[1])
+
+        st.markdown(
+            '<div style="font-size:1.5rem;font-weight:700;margin-top:1.2em;margin-bottom:0.5em;">Repeated Words & Phrases (with frequencies):</div>',
+            unsafe_allow_html=True,
+        )
+        if combined_sorted:
+            st.write(", ".join([f"{w} ({c})" for w, c in combined_sorted]))
         else:
-            st.markdown(
-                '<div style="font-size:1.5rem;font-weight:700;margin-top:1.2em;margin-bottom:0.5em;">Repeated Phrases:</div>',
-                unsafe_allow_html=True,
-            )
             st.write("(None)")
-
-        # Technologies (OpenAI GPT-4o)
-        if openai_key and openai_key.startswith("sk-"):
-            st.markdown(
-                '<div style="font-size:1.5rem;font-weight:700;margin-top:1.2em;margin-bottom:0.5em;">Technologies Detected (AI-Powered):</div>',
-                unsafe_allow_html=True,
-            )
-
-            def extract_technologies_openai(jd, api_key):
-                openai.api_key = api_key
-                prompt = (
-                    "Extract a list of technologies (programming languages, frameworks, cloud services, tools, platforms, etc.) "
-                    "from the following job description. Only return the technologies, one per line, no explanations or extra text:\n\n"
-                    f"{jd}\n"
-                )
-                try:
-                    response = openai.chat.completions.create(
-                        model="gpt-4o",
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": "You are an assistant that extracts a list of technologies from text.",
-                            },
-                            {"role": "user", "content": prompt},
-                        ],
-                        temperature=0,
-                    )
-                    tech_list = response.choices[0].message.content.strip().split("\n")
-                    tech_list = [
-                        re.sub(r"^\s*[\-\*\d\.\)]*\s*", "", t).strip()
-                        for t in tech_list
-                        if t.strip()
-                    ]
-                    return list(set([t for t in tech_list if len(t) > 1]))
-                except Exception as e:
-                    return [f"Error: {e}"]
-
-            with st.spinner("Extracting technologies using GPT-4o..."):
-                techs = extract_technologies_openai(job_desc, openai_key)
-            if techs:
-                tech_freqs = []
-                for tech in techs:
-                    pattern = r"\b{}\b".format(re.escape(tech))
-                    count = len(re.findall(pattern, job_desc, flags=re.IGNORECASE))
-                    tech_freqs.append((tech, count))
-                tech_freqs_sorted = sorted(
-                    tech_freqs, key=lambda x: (-x[1], x[0].lower())
-                )
-                st.write(
-                    ", ".join(
-                        [f"{tech} ({count})" for tech, count in tech_freqs_sorted]
-                    )
-                )
-            else:
-                st.write("(None detected)")
-        else:
-            st.info(
-                "Enter your OpenAI API key above to extract technologies (GPT-4o powered)."
-            )
 
 st.markdown("</div>", unsafe_allow_html=True)
