@@ -5,6 +5,7 @@ from collections import Counter
 from nltk.corpus import stopwords
 from nltk import word_tokenize, ngrams, download
 import openai
+from collections import defaultdict
 
 # Download stopwords if not already present
 download("punkt_tab")
@@ -110,30 +111,228 @@ def clean_text(text):
 def get_stopwords():
     custom_stopwords = {
         # Standard English stopwords (ultra-conservative)
-        "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any",
-        "are", "aren't", "as", "at", "be", "because", "been", "before", "being", "below",
-        "between", "both", "but", "by", "can", "cannot", "could", "couldn't", "did", "didn't",
-        "do", "does", "doesn't", "doing", "don't", "down", "during", "each", "few", "for",
-        "from", "further", "had", "hadn't", "has", "hasn't", "have", "haven't", "having",
-        "he", "he'd", "he'll", "he's", "her", "here", "here's", "hers", "herself", "him",
-        "himself", "his", "how", "how's", "i", "i'd", "i'll", "i'm", "i've", "if", "in",
-        "into", "is", "isn't", "it", "it's", "its", "itself", "let's", "me", "more", "most",
-        "mustn't", "my", "myself", "no", "nor", "not", "of", "off", "on", "once", "only",
-        "or", "other", "ought", "our", "ours", "ourselves", "out", "over", "own", "same",
-        "shan't", "she", "she'd", "she'll", "she's", "should", "shouldn't", "so", "some",
-        "such", "than", "that", "that's", "the", "their", "theirs", "them", "themselves",
-        "then", "there", "there's", "these", "they", "they'd", "they'll", "they're",
-        "they've", "this", "those", "through", "to", "too", "under", "until", "up", "very",
-        "was", "wasn't", "we", "we'd", "we'll", "we're", "we've", "were", "weren't", "what",
-        "what's", "when", "when's", "where", "where's", "which", "while", "who", "who's",
-        "whom", "why", "why's", "with", "won't", "would", "wouldn't", "you", "you'd",
-        "you'll", "you're", "you've", "your", "yours", "yourself", "yourselves",
+        "a",
+        "about",
+        "above",
+        "after",
+        "again",
+        "against",
+        "all",
+        "am",
+        "an",
+        "and",
+        "any",
+        "are",
+        "aren't",
+        "as",
+        "at",
+        "be",
+        "because",
+        "been",
+        "before",
+        "being",
+        "below",
+        "between",
+        "both",
+        "but",
+        "by",
+        "can",
+        "cannot",
+        "could",
+        "couldn't",
+        "did",
+        "didn't",
+        "do",
+        "does",
+        "doesn't",
+        "doing",
+        "don't",
+        "down",
+        "during",
+        "each",
+        "few",
+        "for",
+        "from",
+        "further",
+        "had",
+        "hadn't",
+        "has",
+        "hasn't",
+        "have",
+        "haven't",
+        "having",
+        "he",
+        "he'd",
+        "he'll",
+        "he's",
+        "her",
+        "here",
+        "here's",
+        "hers",
+        "herself",
+        "him",
+        "himself",
+        "his",
+        "how",
+        "how's",
+        "i",
+        "i'd",
+        "i'll",
+        "i'm",
+        "i've",
+        "if",
+        "in",
+        "into",
+        "is",
+        "isn't",
+        "it",
+        "it's",
+        "its",
+        "itself",
+        "let's",
+        "me",
+        "more",
+        "most",
+        "mustn't",
+        "my",
+        "myself",
+        "no",
+        "nor",
+        "not",
+        "of",
+        "off",
+        "on",
+        "once",
+        "only",
+        "or",
+        "other",
+        "ought",
+        "our",
+        "ours",
+        "ourselves",
+        "out",
+        "over",
+        "own",
+        "same",
+        "shan't",
+        "she",
+        "she'd",
+        "she'll",
+        "she's",
+        "should",
+        "shouldn't",
+        "so",
+        "some",
+        "such",
+        "than",
+        "that",
+        "that's",
+        "the",
+        "their",
+        "theirs",
+        "them",
+        "themselves",
+        "then",
+        "there",
+        "there's",
+        "these",
+        "they",
+        "they'd",
+        "they'll",
+        "they're",
+        "they've",
+        "this",
+        "those",
+        "through",
+        "to",
+        "too",
+        "under",
+        "until",
+        "up",
+        "very",
+        "was",
+        "wasn't",
+        "we",
+        "we'd",
+        "we'll",
+        "we're",
+        "we've",
+        "were",
+        "weren't",
+        "what",
+        "what's",
+        "when",
+        "when's",
+        "where",
+        "where's",
+        "which",
+        "while",
+        "who",
+        "who's",
+        "whom",
+        "why",
+        "why's",
+        "with",
+        "won't",
+        "would",
+        "wouldn't",
+        "you",
+        "you'd",
+        "you'll",
+        "you're",
+        "you've",
+        "your",
+        "yours",
+        "yourself",
+        "yourselves",
         # Structural/filler words (neutral, not skills)
-        "etc", "etc.", "per", "such", "within", "among", "across", "amongst", "various", "well",
-        "new", "plus", "year", "years", "based", "related", "highly", "strongly", "successful",
-        "able", "including", "minimum", "maximum", "must", "may", "will", "should", "required", "preferred", "desired",
-        "someone", "everyone", "thing", "things", "nothing", "person", "people", "individual", "individuals", "self",
-        "best", "better", "same", "fit", "core", "appropriate", "potential"
+        "etc",
+        "etc.",
+        "per",
+        "such",
+        "within",
+        "among",
+        "across",
+        "amongst",
+        "various",
+        "well",
+        "new",
+        "plus",
+        "year",
+        "years",
+        "based",
+        "related",
+        "highly",
+        "strongly",
+        "successful",
+        "able",
+        "including",
+        "minimum",
+        "maximum",
+        "must",
+        "may",
+        "will",
+        "should",
+        "required",
+        "preferred",
+        "desired",
+        "someone",
+        "everyone",
+        "thing",
+        "things",
+        "nothing",
+        "person",
+        "people",
+        "individual",
+        "individuals",
+        "self",
+        "best",
+        "better",
+        "same",
+        "fit",
+        "core",
+        "appropriate",
+        "potential",
     }
     return set(stopwords.words("english")).union(custom_stopwords)
 
@@ -184,30 +383,79 @@ with cols[2]:
             st.write("(None)")
 
         # N-grams
-        n = 2
-        found_ngram = False
-        while True:
+        def filter_subsumed_ngrams(all_ngram_counts):
+            """
+            all_ngram_counts: dict of n -> list of (ngram_str, count)
+            Returns: dict in same format, with subsumed ngrams removed.
+            """
+            result = defaultdict(list)
+            # Collect all longer phrases and their counts
+            longer_ngrams = set()
+            longer_ngrams_count = dict()
+            for n in sorted(all_ngram_counts.keys(), reverse=True):
+                for phrase, count in all_ngram_counts[n]:
+                    longer_ngrams.add(phrase)
+                    longer_ngrams_count[phrase] = count
+
+            for n in sorted(all_ngram_counts.keys()):
+                for phrase, count in all_ngram_counts[n]:
+                    subsumed = False
+                    for longer_phrase in longer_ngrams:
+                        if len(longer_phrase.split()) <= len(phrase.split()):
+                            continue
+                        # Make sure phrase boundaries match (use regex or split)
+                        if (
+                            re.search(
+                                r"\b{}\b".format(re.escape(phrase)), longer_phrase
+                            )
+                            and longer_ngrams_count[longer_phrase] >= count
+                        ):
+                            subsumed = True
+                            break
+                    if not subsumed:
+                        result[n].append((phrase, count))
+            return result
+
+        # Compute ngram counts for 2- to N-word phrases
+        all_ngram_counts = {}
+        max_ngram = 6
+        for n in range(2, max_ngram + 1):
             ngram_counts = Counter([" ".join(gram) for gram in ngrams(tokens, n)])
             frequent_ngrams = [
                 (gram, count) for gram, count in ngram_counts.items() if count > 1
             ]
-            if not frequent_ngrams:
-                break
-            found_ngram = True
-            st.markdown(
-                f'<div style="font-size:1.5rem;font-weight:700;margin-top:1.2em;margin-bottom:0.5em;">{n}-word phrases repeated more than once:</div>',
-                unsafe_allow_html=True,
-            )
-            st.write(
-                ", ".join(
-                    [
-                        f"{gram} ({count})"
-                        for gram, count in sorted(frequent_ngrams, key=lambda x: -x[1])
-                    ]
+            if frequent_ngrams:
+                all_ngram_counts[n] = frequent_ngrams
+
+        unique_ngram_counts = filter_subsumed_ngrams(all_ngram_counts)
+
+        if unique_ngram_counts:
+            found_ngram = False
+            for n in sorted(unique_ngram_counts.keys()):
+                ngrams_to_show = unique_ngram_counts[n]
+                if ngrams_to_show:
+                    found_ngram = True
+                    st.markdown(
+                        f'<div style="font-size:1.5rem;font-weight:700;margin-top:1.2em;margin-bottom:0.5em;">{n}-word phrases repeated more than once:</div>',
+                        unsafe_allow_html=True,
+                    )
+                    st.write(
+                        ", ".join(
+                            [
+                                f"{gram} ({count})"
+                                for gram, count in sorted(
+                                    ngrams_to_show, key=lambda x: -x[1]
+                                )
+                            ]
+                        )
+                    )
+            if not found_ngram:
+                st.markdown(
+                    '<div style="font-size:1.5rem;font-weight:700;margin-top:1.2em;margin-bottom:0.5em;">Repeated Phrases:</div>',
+                    unsafe_allow_html=True,
                 )
-            )
-            n += 1
-        if not found_ngram:
+                st.write("(None)")
+        else:
             st.markdown(
                 '<div style="font-size:1.5rem;font-weight:700;margin-top:1.2em;margin-bottom:0.5em;">Repeated Phrases:</div>',
                 unsafe_allow_html=True,
