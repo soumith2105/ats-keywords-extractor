@@ -7,7 +7,7 @@ from nltk import word_tokenize, ngrams, download
 import openai
 
 # Download stopwords if not already present
-download("punkt")
+download("punkt_tab")
 download("stopwords")
 
 st.set_page_config(
